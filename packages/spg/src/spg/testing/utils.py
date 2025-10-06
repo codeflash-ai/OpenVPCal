@@ -44,17 +44,13 @@ class TestBase(unittest.TestCase):
 
     @classmethod
     def get_test_resource_config(cls, config_name):
-        path = os.path.join(
-            cls.get_test_resource_folder(),
-            "configs",
-            config_name
-        )
-        return path
+        folder = cls.get_test_resource_folder()
+        return folder + os.sep + "configs" + os.sep + config_name
 
     @classmethod
     def get_test_resource_ocio_config(cls):
         path = cls.get_test_resource_config("ocio")
-        return os.path.join(path, "aces", "cg", "cg-config-v0.1.0_aces-v1.3_ocio-v2.1.1.ocio")
+        return path + os.sep + "aces" + os.sep + "cg" + os.sep + "cg-config-v0.1.0_aces-v1.3_ocio-v2.1.1.ocio"
 
     @classmethod
     def get_test_resource(cls, resource_name, ext):
