@@ -276,8 +276,10 @@ class BasePatternGenerator(object, metaclass=BasePatternGeneratorMeta):
         :param json_dct: the json dictionary representing the data for the generator settings
         :return: BasePatternGenerator
         """
+        cls_dict = cls.__dict__
+
         for key, value in json_dct.items():
-            if not hasattr(cls, key):
+            if key not in cls_dict:
                 raise AttributeError("Class: {0} does not have attribute {1}".format(cls.name, key))
             setattr(cls, key, value)
 
