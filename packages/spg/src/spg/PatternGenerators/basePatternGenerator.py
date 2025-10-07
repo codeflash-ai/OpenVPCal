@@ -417,36 +417,52 @@ class BasePatternGenerator(object, metaclass=BasePatternGeneratorMeta):
         threads = []
         results = {}
 
-        # We loop over all the walls in the spd config
-        for self.led_wall in self.spg.walls.values():
+        walls = list(self.spg.walls.values())
+        wall_names = [wall.name for wall in walls]
 
-            results[self.led_wall.name] = {}
-            self.get_and_create_pattern_output_folder(
-                sub_folder="_".join([self.led_wall.name, self.name]))
+        # Pre-build the output folders in a batch loop up-front to avoid repeated string join and I/O checks
+        ledwall_subfolders = [
+            "_".join([wall.name, self.name]) for wall in walls
+        ]
+        for wall, subfolder in zip(walls, ledwall_subfolders):
+            self.led_wall = wall  # set for get_and_create_pattern_output_folder call
+            results[wall.name] = {}
+            self.get_and_create_pattern_output_folder(sub_folder=subfolder)
 
         # We add a hook to perform custom logic before we start a new sequence
         self.sequence_start()
-        for self.frame in range(self.number_of_frames()):
 
-            # We add a hook to perform custom logic before we start a frame
-            self.frame_start()
+        # Bind as local func to avoid repeated attribute lookup in tight loop
+        number_of_frames = self.number_of_frames
+        frame_start = self.frame_start
+        get_kwargs = self.get_kwargs
+        generator = self.generator
+        frame_end = self.frame_end
+        # Use local variable to avoid double lookups
+        results_ref = results
 
-            # We get a dictionary of arguments to pass to our custom generator function
-            kwargs = self.get_kwargs()
+        num_frames = number_of_frames()
 
-            # We create a new thread which executes our generator, which we start and keep track of
-            thread = _ThreadedFunction(self.generator, self.frame, kwargs, results)
+        # Minimize per-frame repeated function lookups inside the loop
+        for frame_num in range(num_frames):
+            self.frame = frame_num
+
+            frame_start()
+
+            kwargs = get_kwargs()
+
+            thread = _ThreadedFunction(generator, frame_num, kwargs, results_ref)
             thread.start()
             threads.append(thread)
 
-            # We add a hook to perform custom logic as we end a frame
-            self.frame_end()
+            frame_end()
 
         # We add a hook to perform custom logic as we end a sequence
         self.sequence_end()
 
-        # We wait for all the frames to finish before we return the results
-        [thread.join() for thread in threads]
+        # Inline threaded join using a direct for loop to avoid temporary list object
+        for thread in threads:
+            thread.join()
 
         return results
 
@@ -461,24 +477,32 @@ class BasePatternGenerator(object, metaclass=BasePatternGeneratorMeta):
         """
         pattern_folder_name = cls.name
         if not sub_folder:
-            pattern_folder_name = "".join(
-                [cls.spg.project_settings.folder_prefix, cls.name, cls.spg.project_settings.folder_suffix]
-            )
+            pattern_folder_name = "".join([
+                cls.spg.project_settings.folder_prefix, 
+                cls.name, 
+                cls.spg.project_settings.folder_suffix
+            ])
+            sub_folder_path = None
+        else:
+            sub_folder_path = "".join([
+                cls.spg.project_settings.folder_prefix,
+                sub_folder,
+                cls.spg.project_settings.folder_suffix
+            ])
 
-        if sub_folder:
-            sub_folder = "".join(
-                [cls.spg.project_settings.folder_prefix, sub_folder, cls.spg.project_settings.folder_suffix]
-            )
-
-        base_path = os.path.join(
+        # Build os.path.join arguments in a single tuple, filter None to avoid trailing slashes
+        path_parts = [
             cls.spg.project_settings.output_folder,
             "Patterns",
             pattern_folder_name,
-            sub_folder
-        )
+        ]
+        if sub_folder_path:
+            path_parts.append(sub_folder_path)
 
-        if not os.path.exists(base_path):
-            os.makedirs(base_path)
+        base_path = os.path.join(*path_parts)
+
+        # os.makedirs with exist_ok=True is faster and avoids race condition on parallelism
+        os.makedirs(base_path, exist_ok=True)
 
         return base_path
 
