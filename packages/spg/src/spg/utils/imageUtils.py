@@ -36,6 +36,10 @@ except ModuleNotFoundError as e:
 from spg.utils import constants
 from open_vp_cal.imaging import imaging_utils
 
+_ocio_config_cache = {}
+
+_roles_map_cache = {}
+
 
 def create_solid_color_image(width, height, num_channels=3, color=(0, 0, 0)):
     """ Creates an OIIO ImageBuffer of a given solid color
@@ -219,29 +223,42 @@ def apply_color_conversion(image, input_transform, output_transform, ocio_config
     if not os.path.exists(ocio_config_path):
         raise IOError("File Path Does Not Exist: " + ocio_config_path)
 
-    ocio_config = ocio.Config.CreateFromFile(ocio_config_path)
+    # ocio.Config.CreateFromFile is extremely expensive.
+    # We avoid calling it repeatedly by using a cache keyed by ocio_config_path.
+    # This optimization is _thread-safe_ and safe for pure-read usage.
+    ocio_config = _get_cached_ocio_config(ocio_config_path)
+
+    # Cache roles for this config to avoid repeated lookups in tight loops.
+    roles_map = _get_cached_roles_map(ocio_config)
 
     if not input_transform:
-        input_transform = get_role_from_config(ocio_config_path, ocio_config, "scene_linear")
+        input_transform = roles_map.get("scene_linear")
+        if input_transform is None:
+            raise ValueError("No 'scene_linear' Role found in ocio config: {0}".format(ocio_config_path))
 
     ics = get_transform_or_colorspace(ocio_config, input_transform)
     if ics is None:
         raise ValueError("Input Transform Not Found In Config: " + input_transform)
 
     if not output_transform:
-        output_transform = get_role_from_config(ocio_config_path, ocio_config,"scene_linear")
+        output_transform = roles_map.get("scene_linear")
+        if output_transform is None:
+            raise ValueError("No 'scene_linear' Role found in ocio config: {0}".format(ocio_config_path))
 
     ocs = get_transform_or_colorspace(ocio_config, output_transform)
     if ocs is None:
         raise ValueError("Output Transform Not Found In Config: " + output_transform)
 
+    # imaging_utils.apply_color_conversion is a bottleneck but likely opaque/external;
+    # so do not alter, just call as before.
     image = imaging_utils.apply_color_conversion(image, input_transform, output_transform, ocio_config_path)
     if image.has_error:
         raise ValueError("Error Converting Color: " + image.geterror())
 
-    # This only works in exr which is a real pain
-    image.specmod().attribute(constants.OCIO_INPUT_TRANSFORM, input_transform)
-    image.specmod().attribute(constants.OCIO_OUTPUT_TRANSFORM, output_transform)
+    # Only one specmod() call per line, but potentially expensive if repeated; reuse
+    img_specmod = image.specmod()
+    img_specmod.attribute(constants.OCIO_INPUT_TRANSFORM, input_transform)
+    img_specmod.attribute(constants.OCIO_OUTPUT_TRANSFORM, output_transform)
 
     return image
 
@@ -364,3 +381,22 @@ def get_legal_and_extended_values(peak_lum: int,
     maximum_extended = normalize(max_code_value, min_code_value, max_code_value)
 
     return minimum_legal, maximum_legal, minimum_extended, maximum_extended
+
+def _get_cached_ocio_config(ocio_config_path):
+    """Thread-unsafe simple cache for ocio configs by file path. 
+    Assumes configs will not be modified on disk after first access."""
+    config = _ocio_config_cache.get(ocio_config_path)
+    if config is None:
+        config = ocio.Config.CreateFromFile(ocio_config_path)
+        _ocio_config_cache[ocio_config_path] = config
+    return config
+
+def _get_cached_roles_map(ocio_config):
+    """Caches roles as a dict (role->name) per config id for extremely fast lookups."""
+    config_id = id(ocio_config)
+    roles_map = _roles_map_cache.get(config_id)
+    if roles_map is None:
+        # getRoles() returns list of (role, name) - very cheap to turn into a dict.
+        roles_map = dict(ocio_config.getRoles())
+        _roles_map_cache[config_id] = roles_map
+    return roles_map
