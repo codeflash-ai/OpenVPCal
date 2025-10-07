@@ -257,7 +257,16 @@ class BasePatternGenerator(object, metaclass=BasePatternGeneratorMeta):
         """
         :return: Returns the string representation of the class, which is a json string
         """
-        return json.dumps(dict(self), ensure_ascii=False)
+        cls = self.__class__
+        state = {
+            "name": cls.name,
+            "pattern_type": cls.pattern_type,
+            "sequence_length": cls.sequence_length,
+            "bit_depth_override": cls.bit_depth_override,
+            "input_transform": cls.input_transform,
+            "enable_color_conversion": cls.enable_color_conversion
+        }
+        return json.dumps(state, ensure_ascii=False)
 
     def __repr__(self):
         return self.__str__()
