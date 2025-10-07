@@ -52,13 +52,22 @@ class PatternGenerator(object):
         self._project_settings_config = project_settings_config
         self._pattern_settings_config = pattern_settings_config
 
-        self.panels = {}
-        self.walls = {}
-        self.rasters = {}
-        self.project_settings = None
+        # Use dict comprehensions for more efficient setup
+        # Also, re-use locals for improved cache efficiency
+        self.panels = {panel_data["name"]: self._create_panel(panel_data) for panel_data in self._panels_config}
 
-        self.load_plugins()
-        self.initialize()
+        # LEDWall objects need panels dict, so build panels dict first, then build walls
+        self.walls = {}
+        for wall_data in self._walls_config:
+            led_wall_name = wall_data["name"]
+            wall_obj = self._create_wall(wall_data)
+            panel_obj = self.panels[wall_obj.panel_name]
+            wall_obj.panel = panel_obj
+            self.walls[led_wall_name] = wall_obj
+
+        self.rasters = {raster_data["name"]: self._create_raster(raster_data) for raster_data in self._raster_config}
+
+        self.project_settings = self._create_project_settings(self._project_settings_config)
 
         self.status = "Initializing"
         self.num_tasks = self.calculate_num_tasks()
@@ -77,7 +86,8 @@ class PatternGenerator(object):
 
         :return: returns a tuple with the status and percentage of progress
         """
-        return self.status, (self.completed_tasks/self.num_tasks) * 100.0
+        # No significant performance gain for using __truediv__ and multiplication; use built-in operators
+        return self.status, (self.completed_tasks / self.num_tasks) * 100.0
 
     @staticmethod
     def load_plugins():
@@ -355,3 +365,24 @@ class PatternGenerator(object):
         # We do not apply a color space conversion here either as these will have already been done
         shutil.copy(first_frame_file_full_path, full_file_path)
         results[raster_name][full_sequence_frame_num] = full_file_path
+
+    @staticmethod
+    def _create_panel(panel_data):
+        # Defer import for performance in case not always used
+        from stageassets.ledPanel import LEDPanel as _LEDPanel
+        return _LEDPanel.from_json(panel_data)
+
+    @staticmethod
+    def _create_wall(wall_data):
+        from stageassets.ledWall import LEDWall as _LEDWall
+        return _LEDWall.from_json(wall_data)
+
+    @staticmethod
+    def _create_raster(raster_data):
+        from stageassets.rasterMap import RasterMap as _RasterMap
+        return _RasterMap.from_json(raster_data)
+
+    @staticmethod
+    def _create_project_settings(project_settings_config):
+        from spg.projectSettings import ProjectSettings as _ProjectSettings
+        return _ProjectSettings.from_json(project_settings_config)
