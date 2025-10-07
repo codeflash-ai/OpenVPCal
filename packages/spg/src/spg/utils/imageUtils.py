@@ -305,9 +305,9 @@ def pq_to_nits(pq_value: float) -> float:
     Returns:
     float: Corresponding luminance in nits (cd/m^2).
     """
-    E = pq_value
-    FD = constants.PQ_MAX_NITS * ((max((E ** (1 / constants.PQ_M2) - constants.PQ_C1), 0)) /
-                           (constants.PQ_C2 - constants.PQ_C3 * E ** (1 / constants.PQ_M2))) ** (1 / constants.PQ_M1)
+    E_pow = pq_value ** (1 / constants.PQ_M2)
+    FD = constants.PQ_MAX_NITS * ((max((E_pow - constants.PQ_C1), 0)) /
+                           (constants.PQ_C2 - constants.PQ_C3 * E_pow)) ** (1 / constants.PQ_M1)
     return FD
 
 
