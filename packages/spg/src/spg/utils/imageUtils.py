@@ -36,6 +36,19 @@ except ModuleNotFoundError as e:
 from spg.utils import constants
 from open_vp_cal.imaging import imaging_utils
 
+_BIT_DEPTH_MAP = {
+    8: oiio.UINT8,
+    10: oiio.UINT16,
+    12: oiio.UINT16,
+    16: oiio.UINT16,
+    32: oiio.UINT32,
+    64: oiio.UINT64,
+    "half": oiio.HALF,
+    "float": oiio.FLOAT
+}
+
+_SUPPORTED_DEPTHS_STR = ",".join(str(k) for k in _BIT_DEPTH_MAP)
+
 
 def create_solid_color_image(width, height, num_channels=3, color=(0, 0, 0)):
     """ Creates an OIIO ImageBuffer of a given solid color
@@ -188,20 +201,10 @@ def get_oiio_bit_depth(value):
     :param value: the int value of the bit depth we want
     :return: the correct oiio.TypeDesc
     """
-    bit_depth_map = {
-        8: oiio.UINT8,
-        10: oiio.UINT16,
-        12: oiio.UINT16,
-        16: oiio.UINT16,
-        32: oiio.UINT32,
-        64: oiio.UINT64,
-        "half": oiio.HALF,
-        "float": oiio.FLOAT
-    }
-    if value not in bit_depth_map:
-        KeyError("Unsupported Bit Depth - Must Be" + ",".join([str(k) for k in bit_depth_map.keys()]))
-
-    return bit_depth_map[value]
+    try:
+        return _BIT_DEPTH_MAP[value]
+    except KeyError:
+        raise KeyError("Unsupported Bit Depth - Must Be" + _SUPPORTED_DEPTHS_STR)
 
 
 def apply_color_conversion(image, input_transform, output_transform, ocio_config_path):
