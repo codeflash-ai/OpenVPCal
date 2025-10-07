@@ -70,7 +70,7 @@ class PatternGenerator(object):
 
         :return: the number of tasks which need to be performed
         """
-        return len(self._pattern_settings_config) + len(self.rasters.keys())
+        return len(self._pattern_settings_config) + len(self.rasters)
 
     def progress(self):
         """ Reports the current status and the percentage of the tasks completed
