@@ -36,6 +36,10 @@ except ModuleNotFoundError as e:
 from spg.utils import constants
 from open_vp_cal.imaging import imaging_utils
 
+_FONT_PATH_CACHE = {}
+
+_FONT_EXISTENCE_CACHE = {}
+
 
 def create_solid_color_image(width, height, num_channels=3, color=(0, 0, 0)):
     """ Creates an OIIO ImageBuffer of a given solid color
@@ -90,29 +94,27 @@ def add_text_to_image_centre(buffer, text, font_size=None, font_path=None, text_
     :return: ImageBuf
     """
     if not font_path:
-        font_path = ResourceLoader.regular_font()
+        font_path = _get_regular_font_path()
 
-    if not font_size:
-        if buffer.roi.width == buffer.roi.height:
-            average = (buffer.roi.width + buffer.roi.height) / 2
-
-        elif buffer.roi.width > buffer.roi.height:
-            average = buffer.roi.height / 2
-
+    if font_size is None:
+        w = buffer.roi.width
+        h = buffer.roi.height
+        if w == h:
+            average = (w + h) / 2
+        elif w > h:
+            average = h / 2
         else:
-            average = buffer.roi.width / 2
-
+            average = w / 2
         font_size = int(average * 0.8)
 
-    if not os.path.exists(font_path):
+    if not _font_exists(font_path):
         raise IOError("Font Path Not Found: " + font_path)
 
     size = ImageBufAlgo.text_size(text, fontsize=font_size, fontname=font_path)
     if size.defined:
-        if not x_pos_override:
+        if x_pos_override is None:
             x_pos_override = buffer.roi.xbegin + buffer.roi.width / 2 - (size.xbegin + size.width / 2)
-
-        if not y_pos_override:
+        if y_pos_override is None:
             y_pos_override = buffer.roi.ybegin + buffer.roi.height / 2 - (size.ybegin + size.height / 2)
 
         if not ImageBufAlgo.render_text(
@@ -364,3 +366,18 @@ def get_legal_and_extended_values(peak_lum: int,
     maximum_extended = normalize(max_code_value, min_code_value, max_code_value)
 
     return minimum_legal, maximum_legal, minimum_extended, maximum_extended
+
+def _get_regular_font_path():
+    # Use memoization for speed
+    if "regular" not in _FONT_PATH_CACHE:
+        _FONT_PATH_CACHE["regular"] = ResourceLoader.regular_font()
+    return _FONT_PATH_CACHE["regular"]
+
+def _font_exists(font_path):
+    # Assumes font files don't change during process lifetime
+    exists = _FONT_EXISTENCE_CACHE.get(font_path)
+    if exists is not None:
+        return exists
+    result = os.path.exists(font_path)
+    _FONT_EXISTENCE_CACHE[font_path] = result
+    return result
